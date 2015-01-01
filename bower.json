@@ -1,0 +1,27 @@
+{
+  "name": "webm-fingerprint",
+  "version": "0.1.0",
+  "authors": [
+    "Andrew Rogers <anrogers529@gmail.com>"
+  ],
+  "description": "Fingerprinting WebM videos in the browser.",
+  "main": "build/webm-fingerprint.js",
+  "moduleType": [
+    "globals",
+    "node"
+  ],
+  "keywords": [
+    "video",
+    "webm",
+    "phash"
+  ],
+  "license": "MIT",
+  "homepage": "http://github.com/cpancake/webm-fingerprint",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ]
+}

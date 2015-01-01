@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>WebM Fingerprint Test</title>
+	<script src="build/webm-fingerprint.js"></script>
+	<script src="https://code.jquery.com/jquery-1.11.2.min.js"></script>
+</head>
+<body>
+	<input type="file" accept="image/*;capture=camcorder">
+	<video></video>
+	<script>
+		$("input").val("").on("change", function(event) {
+			var element = $("video");
+			var files = event.target.files;
+			if(files && files.length > 0)
+			{
+				var file = files[0];
+				if(element.is("video"))
+				{
+					var fileReader = new FileReader();
+					fileReader.onload = function(event)
+					{
+						element.attr("src", event.target.result);
+						WebMFingerprint(element[0], function(err, result) {
+							console.log(err);
+							console.log(result);
+						});
+					}
+					fileReader.readAsDataURL(file);
+				}
+			}
+		});
+	</script>
+</body>
+</html>
