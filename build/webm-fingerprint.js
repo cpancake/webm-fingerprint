@@ -221,30 +221,40 @@ BitArray.prototype.xor = function (x) {
 	});
 	return this;
 };
+// generate perceptual hashes of images (ahash, dhash)
 var PerceptualHash = (function() {
+	// creates a grayscale image from the specified element, width, and height.
 	function createImage(element, width, height)
 	{
 		var canvas = document.createElement('canvas');
 		canvas.width = width;
 		canvas.height = height;
 		var ctx = canvas.getContext('2d');
+		// draw the element to the canvas - the browser handles scaling for us
 		ctx.drawImage(element, 0, 0, width, height);
+		// get the raw pixel data from the image
 		var data = ctx.getImageData(0, 0, width, height).data;
 		var grayscale = [];
 		for(var i = 0; i < (height * width) * 4; i += 4)
 		{
+			// average together the components of the image to convert it to grayscale
 			var average = (data[i] + data[i + 1] + data[i + 2]) / 3;
+			// multiply by alpha
 			average *= (255 / data[i + 3]);
 			grayscale.push(Math.floor(average));
 		}
 		return grayscale;
 	}
 
+	// average hash of an element
 	function aHash(element)
 	{
 		var pixels = createImage(element, 8, 8);
+		// sum up all the pixels and average them
 		var sum = pixels.reduce(function(a, b) { return a + b; });
 		var avg = sum / pixels.length;
+		// create a bitarray with each bit corresponding to each pixel
+		// being greater or less than the average
 		var bits = new BitArray(64);
 		for(var i = 0; i < 64; i++)
 			bits.set(i, pixels[i] >= avg);
@@ -254,6 +264,8 @@ var PerceptualHash = (function() {
 	function dHash(element)
 	{
 		var pixels = createImage(element, 9, 8);
+		// create a bitarray with each bit corresponding to whether or not 
+		// the pixel is less than the pixel to the right
 		var bits = new BitArray(64);
 		for(var i = 0; i < 64; i++)
 			bits.set(i, pixels[i] < pixels[i + 1]);
@@ -266,16 +278,30 @@ var PerceptualHash = (function() {
 		createImage: createImage
 	};
 })();
+// fingerprint webms
 var WebMFingerprint = (function() {
-	function processElement(element, callback)
+	function processElement(element, config, callback)
 	{
+		var generateAHash = true;
+		var generateDHash = true;
+
+		// man this is ugly but there's no way to short circuit this
+		if(config.aHash === false)
+			generateAHash = false;
+		if(config.dHash === false)
+			generateDHash = false;
+
+		// start at the beginning
 		element.currentTime = 0;
 		var dHashes = [];
 		var aHashes = [];
 		function generateHashes()
 		{
-			aHashes.push(PerceptualHash.aHash(element));
-			dHashes.push(PerceptualHash.dHash(element));
+			if(generateAHash)
+				aHashes.push(PerceptualHash.aHash(element));
+			if(generateDHash)
+				dHashes.push(PerceptualHash.dHash(element));
+			// keep going until we're at the end, or one second from the end
 			if(element.duration - element.currentTime > 1)
 				element.currentTime += 1;
 			else
@@ -284,22 +310,42 @@ var WebMFingerprint = (function() {
 					dHashes: dHashes
 				});
 		}
+		// every time the "seeked" event fires, generate a hash.
+		// we can't generate a hash as soon as we seek, so this makes sure the video has loaded before we try.
 		element.addEventListener('seeked', generateHashes);
 		generateHashes();
 	}
 
+	// generate the hashes of the element
+	// if element is an object, it will be interpreted as a config object:
+	// 	- element: the element to hash
+	// 	- aHash: generate an average hash
+	// 	- dHash: generate a difference hash
 	function fingerprint(element, callback)
 	{
+		var config = {};
+		// if element isn't actually an element
+		if(element.nodeName == undefined)
+		{
+			var config = element;
+			element = config.element;
+			if(!config.element)
+				return callback('No element specified.');
+		}
 		var duration = element.duration;
+		// this is an internet stream - we can't do anything with this
 		if(duration == Infinity)
 			return callback("Cannot fingerprint streaming media.");
+		// something's wrong
 		if(duration == undefined || duration == NaN)
 			return callback("Video length not available.");
+		// the video's duration isn't available (it probably hasn't loaded yet)
 		if(duration == 0 || element.readyState == 0)
+			// process the element when it's ready to be processed
 			return element.addEventListener('loadedmetadata', function(e) {
-				processElement(element, callback);
+				processElement(element, config, callback);
 			});
-		processElement(element, callback);
+		processElement(element, config, callback);
 	}
 
 	return fingerprint;

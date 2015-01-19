@@ -30,6 +30,18 @@ The `result` object will contain two fields:
 
 Note that the function doesn't preserve whatever the current position of the media element is; you'll have to preserve this and restore it when the callback is called if you want to.
 
+You can also specify which hash you want if you only want one type. You can specify this in a config object instead of the element:
+```javascript
+WebMFingerprint({
+	aHash: true,
+	dHash: false,
+	element: $('video')[0]
+}, function(err, result) {
+    if(err) throw err;
+    console.log(result); // see below
+});
+```
+
 ## License
 ```
 The MIT License (MIT)
