@@ -224,8 +224,10 @@ BitArray.prototype.xor = function (x) {
 // generate perceptual hashes of images (ahash, dhash)
 var PerceptualHash = (function() {
 	// creates a grayscale image from the specified element, width, and height.
-	function createImage(element, width, height)
+	function createImage(element, width, height, isGrayscale)
 	{
+		if(isGrayscale === undefined)
+			isGrayscale = true;
 		var canvas = document.createElement('canvas');
 		canvas.width = width;
 		canvas.height = height;
@@ -234,6 +236,8 @@ var PerceptualHash = (function() {
 		ctx.drawImage(element, 0, 0, width, height);
 		// get the raw pixel data from the image
 		var data = ctx.getImageData(0, 0, width, height).data;
+		if(!isGrayscale) return data;
+
 		var grayscale = [];
 		for(var i = 0; i < (height * width) * 4; i += 4)
 		{
@@ -261,6 +265,7 @@ var PerceptualHash = (function() {
 		return bits.toHexString();
 	}
 
+	// difference hash of an element
 	function dHash(element)
 	{
 		var pixels = createImage(element, 9, 8);
@@ -272,9 +277,51 @@ var PerceptualHash = (function() {
 		return bits.toHexString();
 	}
 
+	// creates a uniqueness number for comparing frame uniqueness
+	function cHash(element)
+	{
+		var pixels = createImage(element, 16, 16, false);
+
+		// compute the average color
+		var rSum = 0;
+		var gSum = 0;
+		var bSum = 0;
+		for(var i = 0; i < pixels.length - 3; i += 3)
+		{
+			rSum += pixels[i] || 0;
+			gSum += pixels[i - 1] || 0;
+			bSum += pixels[i - 2] || 0;
+		}
+		var averageColor = [
+			Math.floor(rSum / pixels.length), 
+			Math.floor(gSum / pixels.length), 
+			Math.floor(bSum / pixels.length)
+		];
+		var totalDistanceFromAverage = 0;
+		var uniqueColors = {};
+
+		for(var i = 0; i < pixels.length - 3; i += 3)
+		{
+			// sum together the distance from average for every pixel
+			var distance = 0;
+			distance += Math.abs(pixels[i] - averageColor[0]);
+			distance += Math.abs(pixels[i + 1] - averageColor[1]);
+			distance += Math.abs(pixels[i + 2] - averageColor[2]);
+			totalDistanceFromAverage += distance;
+
+			// add to the hash of unique colors
+			var colorStr = pixels[i] + ',' + pixels[i + 1] + ',' + pixels[i + 2];
+			uniqueColors[colorStr] = true;
+		}
+
+		var uniqueCount = Object.keys(uniqueColors).length;
+		return uniqueCount + totalDistanceFromAverage;
+	}
+
 	return {
 		aHash: aHash,
 		dHash: dHash,
+		cHash: cHash,
 		createImage: createImage
 	};
 })();
@@ -295,25 +342,68 @@ var WebMFingerprint = (function() {
 		element.currentTime = 0;
 		var dHashes = [];
 		var aHashes = [];
+		// how far to jump each frame
+		var frameJump = 1 / 24;
+		// are we still finding the best frame or have we finished that already?
+		var checkingFrames = true;
+		// here's where we put the frames we've checked
+		var checkedFrames = [];
+
+		// check a frame
+		// if we're done, generate a hash of the best frame
+		function checkFrames()
+		{
+			// generate a hash of the best frame
+			if(!checkingFrames)
+				return generateHashes();
+			// if we've generated enough frames, seek to it
+			// so next time this function runs, we generate a hash of it
+			if(checkedFrames.length >= 24 || element.currentTime == element.duration)
+			{
+				checkingFrames = false;
+				// find the highest frame's index
+				var bestFrameIndex = checkedFrames.indexOf(checkedFrames.concat().sort().reverse()[0]);
+				element.currentTime = (Math.floor(element.currentTime) - 1) + (bestFrameIndex * frameJump);
+				checkedFrames = [];
+				return;
+			}
+			// push the current hash and do it again
+			checkedFrames.push(PerceptualHash.cHash(element));
+			element.currentTime += frameJump;
+		}
+
 		function generateHashes()
 		{
 			if(generateAHash)
-				aHashes.push(PerceptualHash.aHash(element));
+			{
+				var hash = PerceptualHash.aHash(element);
+				// make sure it's not a duplicate
+				if(aHashes.indexOf(hash) == -1)
+					aHashes.push(hash);
+			}
 			if(generateDHash)
-				dHashes.push(PerceptualHash.dHash(element));
+			{
+				var hash = PerceptualHash.dHash(element);
+				// make sure it's not a duplicate
+				if(dHashes.indexOf(hash) == -1)
+					dHashes.push(hash);
+			}
 			// keep going until we're at the end, or one second from the end
 			if(element.duration - element.currentTime > 1)
-				element.currentTime += 1;
+				element.currentTime = Math.floor(element.currentTime) + 1;
 			else
+			{
+				element.removeEventListener('seeked', checkFrames);
 				return callback(null, {
 					aHashes: aHashes,
 					dHashes: dHashes
 				});
+			}
 		}
-		// every time the "seeked" event fires, generate a hash.
+		// every time the "seeked" event fires, check the frame.
 		// we can't generate a hash as soon as we seek, so this makes sure the video has loaded before we try.
-		element.addEventListener('seeked', generateHashes);
-		generateHashes();
+		element.addEventListener('seeked', checkFrames);
+		checkFrames();
 	}
 
 	// generate the hashes of the element

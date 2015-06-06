@@ -1,8 +1,10 @@
 // generate perceptual hashes of images (ahash, dhash)
 var PerceptualHash = (function() {
 	// creates a grayscale image from the specified element, width, and height.
-	function createImage(element, width, height)
+	function createImage(element, width, height, isGrayscale)
 	{
+		if(isGrayscale === undefined)
+			isGrayscale = true;
 		var canvas = document.createElement('canvas');
 		canvas.width = width;
 		canvas.height = height;
@@ -11,6 +13,8 @@ var PerceptualHash = (function() {
 		ctx.drawImage(element, 0, 0, width, height);
 		// get the raw pixel data from the image
 		var data = ctx.getImageData(0, 0, width, height).data;
+		if(!isGrayscale) return data;
+
 		var grayscale = [];
 		for(var i = 0; i < (height * width) * 4; i += 4)
 		{
@@ -38,6 +42,7 @@ var PerceptualHash = (function() {
 		return bits.toHexString();
 	}
 
+	// difference hash of an element
 	function dHash(element)
 	{
 		var pixels = createImage(element, 9, 8);
@@ -49,9 +54,51 @@ var PerceptualHash = (function() {
 		return bits.toHexString();
 	}
 
+	// creates a uniqueness number for comparing frame uniqueness
+	function cHash(element)
+	{
+		var pixels = createImage(element, 16, 16, false);
+
+		// compute the average color
+		var rSum = 0;
+		var gSum = 0;
+		var bSum = 0;
+		for(var i = 0; i < pixels.length - 3; i += 3)
+		{
+			rSum += pixels[i] || 0;
+			gSum += pixels[i - 1] || 0;
+			bSum += pixels[i - 2] || 0;
+		}
+		var averageColor = [
+			Math.floor(rSum / pixels.length), 
+			Math.floor(gSum / pixels.length), 
+			Math.floor(bSum / pixels.length)
+		];
+		var totalDistanceFromAverage = 0;
+		var uniqueColors = {};
+
+		for(var i = 0; i < pixels.length - 3; i += 3)
+		{
+			// sum together the distance from average for every pixel
+			var distance = 0;
+			distance += Math.abs(pixels[i] - averageColor[0]);
+			distance += Math.abs(pixels[i + 1] - averageColor[1]);
+			distance += Math.abs(pixels[i + 2] - averageColor[2]);
+			totalDistanceFromAverage += distance;
+
+			// add to the hash of unique colors
+			var colorStr = pixels[i] + ',' + pixels[i + 1] + ',' + pixels[i + 2];
+			uniqueColors[colorStr] = true;
+		}
+
+		var uniqueCount = Object.keys(uniqueColors).length;
+		return uniqueCount + totalDistanceFromAverage;
+	}
+
 	return {
 		aHash: aHash,
 		dHash: dHash,
+		cHash: cHash,
 		createImage: createImage
 	};
 })();

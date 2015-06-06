@@ -15,25 +15,68 @@ var WebMFingerprint = (function() {
 		element.currentTime = 0;
 		var dHashes = [];
 		var aHashes = [];
+		// how far to jump each frame
+		var frameJump = 1 / 24;
+		// are we still finding the best frame or have we finished that already?
+		var checkingFrames = true;
+		// here's where we put the frames we've checked
+		var checkedFrames = [];
+
+		// check a frame
+		// if we're done, generate a hash of the best frame
+		function checkFrames()
+		{
+			// generate a hash of the best frame
+			if(!checkingFrames)
+				return generateHashes();
+			// if we've generated enough frames, seek to it
+			// so next time this function runs, we generate a hash of it
+			if(checkedFrames.length >= 24 || element.currentTime == element.duration)
+			{
+				checkingFrames = false;
+				// find the highest frame's index
+				var bestFrameIndex = checkedFrames.indexOf(checkedFrames.concat().sort().reverse()[0]);
+				element.currentTime = (Math.floor(element.currentTime) - 1) + (bestFrameIndex * frameJump);
+				checkedFrames = [];
+				return;
+			}
+			// push the current hash and do it again
+			checkedFrames.push(PerceptualHash.cHash(element));
+			element.currentTime += frameJump;
+		}
+
 		function generateHashes()
 		{
 			if(generateAHash)
-				aHashes.push(PerceptualHash.aHash(element));
+			{
+				var hash = PerceptualHash.aHash(element);
+				// make sure it's not a duplicate
+				if(aHashes.indexOf(hash) == -1)
+					aHashes.push(hash);
+			}
 			if(generateDHash)
-				dHashes.push(PerceptualHash.dHash(element));
+			{
+				var hash = PerceptualHash.dHash(element);
+				// make sure it's not a duplicate
+				if(dHashes.indexOf(hash) == -1)
+					dHashes.push(hash);
+			}
 			// keep going until we're at the end, or one second from the end
 			if(element.duration - element.currentTime > 1)
-				element.currentTime += 1;
+				element.currentTime = Math.floor(element.currentTime) + 1;
 			else
+			{
+				element.removeEventListener('seeked', checkFrames);
 				return callback(null, {
 					aHashes: aHashes,
 					dHashes: dHashes
 				});
+			}
 		}
-		// every time the "seeked" event fires, generate a hash.
+		// every time the "seeked" event fires, check the frame.
 		// we can't generate a hash as soon as we seek, so this makes sure the video has loaded before we try.
-		element.addEventListener('seeked', generateHashes);
-		generateHashes();
+		element.addEventListener('seeked', checkFrames);
+		checkFrames();
 	}
 
 	// generate the hashes of the element
