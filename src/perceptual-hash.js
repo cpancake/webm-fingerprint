@@ -55,6 +55,7 @@ var PerceptualHash = (function() {
 	}
 
 	// creates a uniqueness number for comparing frame uniqueness
+	// does it work ??? i don't know
 	function cHash(element)
 	{
 		var pixels = createImage(element, 16, 16, false);

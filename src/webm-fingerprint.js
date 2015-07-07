@@ -16,7 +16,7 @@ var WebMFingerprint = (function() {
 		var dHashes = [];
 		var aHashes = [];
 		// how far to jump each frame
-		var frameJump = 1 / 24;
+		var frameJump = 1 / (config.fps || 24);
 		// are we still finding the best frame or have we finished that already?
 		var checkingFrames = true;
 		// here's where we put the frames we've checked
@@ -28,20 +28,23 @@ var WebMFingerprint = (function() {
 		{
 			// generate a hash of the best frame
 			if(!checkingFrames)
+			{
+				checkingFrames = true;
 				return generateHashes();
+			}
 			// if we've generated enough frames, seek to it
 			// so next time this function runs, we generate a hash of it
 			if(checkedFrames.length >= 24 || element.currentTime == element.duration)
 			{
 				checkingFrames = false;
 				// find the highest frame's index
-				var bestFrameIndex = checkedFrames.indexOf(checkedFrames.concat().sort().reverse()[0]);
-				element.currentTime = (Math.floor(element.currentTime) - 1) + (bestFrameIndex * frameJump);
+				var highestFrameIndex = KeyframeExtractor.findShotBoundary(checkedFrames);
+				element.currentTime = (Math.floor(element.currentTime) - (checkedFrames.length * frameJump)) + (highestFrameIndex * frameJump);
 				checkedFrames = [];
 				return;
 			}
 			// push the current hash and do it again
-			checkedFrames.push(PerceptualHash.cHash(element));
+			checkedFrames.push(KeyframeExtractor.calculateImageEntropy(element));
 			element.currentTime += frameJump;
 		}
 
@@ -84,6 +87,7 @@ var WebMFingerprint = (function() {
 	// 	- element: the element to hash
 	// 	- aHash: generate an average hash
 	// 	- dHash: generate a difference hash
+	// 	- fps: the fps of the video
 	function fingerprint(element, callback)
 	{
 		var config = {};

@@ -221,6 +221,63 @@ BitArray.prototype.xor = function (x) {
 	});
 	return this;
 };
+// find keyframes!
+var KeyframeExtractor = (function() {
+	// creates a histogram from an element
+	function createHistogram(element)
+	{
+		var image = PerceptualHash.createImage(element, element.videoWidth, element.videoHeight, true);
+		var histogram = {};
+		// populate the histogram
+		for(var i = 0; i < 255; i++)
+			histogram[i] = 0;
+
+		// fill the histogram with the data from the image
+		image.forEach(function(pixel) {
+			histogram[pixel]++;
+		});
+
+		return Object.keys(histogram).map(function(k) { return histogram[k]; });
+	}
+
+	// adapted from http://brainacle.com/calculating-image-entropy-with-python-how-and-why.html
+	function calculateImageEntropy(element)
+	{
+		var histogram = createHistogram(element);
+		var probability = histogram.map(function(h) {
+			return h / histogram.length;
+		}).filter(function(h) { return h > 0; });
+
+		return probability.map(function(h) {
+			return h * (Math.log(h) / Math.LN2);
+		}).reduce(function(a, b) {
+			return a + b;
+		});
+	}
+
+	// finds the highest difference between frames and returns it
+	function findShotBoundary(frames)
+	{
+		var entropyDifference = [0];
+		for(var i = 1; i < frames.length; i++)
+			entropyDifference.push(Math.abs(frames[i] - frames[i - 1]));
+		var highestShotIndex = -1;
+		var highestShotValue = 0;
+		for(var i = 0; i < frames.length; i++)
+			if(highestShotIndex == -1 || highestShotValue < entropyDifference[i])
+			{
+				highestShotIndex = i;
+				highestShotValue = entropyDifference[i];
+			}
+		return highestShotIndex;
+	}
+
+	return {
+		calculateImageEntropy: calculateImageEntropy,
+		createHistogram: createHistogram,
+		findShotBoundary: findShotBoundary
+	};
+})();
 // generate perceptual hashes of images (ahash, dhash)
 var PerceptualHash = (function() {
 	// creates a grayscale image from the specified element, width, and height.
@@ -278,6 +335,7 @@ var PerceptualHash = (function() {
 	}
 
 	// creates a uniqueness number for comparing frame uniqueness
+	// does it work ??? i don't know
 	function cHash(element)
 	{
 		var pixels = createImage(element, 16, 16, false);
@@ -343,7 +401,7 @@ var WebMFingerprint = (function() {
 		var dHashes = [];
 		var aHashes = [];
 		// how far to jump each frame
-		var frameJump = 1 / 24;
+		var frameJump = 1 / (config.fps || 24);
 		// are we still finding the best frame or have we finished that already?
 		var checkingFrames = true;
 		// here's where we put the frames we've checked
@@ -355,20 +413,23 @@ var WebMFingerprint = (function() {
 		{
 			// generate a hash of the best frame
 			if(!checkingFrames)
+			{
+				checkingFrames = true;
 				return generateHashes();
+			}
 			// if we've generated enough frames, seek to it
 			// so next time this function runs, we generate a hash of it
 			if(checkedFrames.length >= 24 || element.currentTime == element.duration)
 			{
 				checkingFrames = false;
 				// find the highest frame's index
-				var bestFrameIndex = checkedFrames.indexOf(checkedFrames.concat().sort().reverse()[0]);
-				element.currentTime = (Math.floor(element.currentTime) - 1) + (bestFrameIndex * frameJump);
+				var highestFrameIndex = KeyframeExtractor.findShotBoundary(checkedFrames);
+				element.currentTime = (Math.floor(element.currentTime) - (checkedFrames.length * frameJump)) + (highestFrameIndex * frameJump);
 				checkedFrames = [];
 				return;
 			}
 			// push the current hash and do it again
-			checkedFrames.push(PerceptualHash.cHash(element));
+			checkedFrames.push(KeyframeExtractor.calculateImageEntropy(element));
 			element.currentTime += frameJump;
 		}
 
@@ -411,6 +472,7 @@ var WebMFingerprint = (function() {
 	// 	- element: the element to hash
 	// 	- aHash: generate an average hash
 	// 	- dHash: generate a difference hash
+	// 	- fps: the fps of the video
 	function fingerprint(element, callback)
 	{
 		var config = {};

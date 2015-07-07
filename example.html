@@ -21,10 +21,11 @@
 					fileReader.onload = function(event)
 					{
 						element.attr("src", event.target.result);
-						WebMFingerprint(element[0], function(err, result) {
+						/*WebMFingerprint(element[0], function(err, result) {
 							console.log(err);
 							console.log(result);
-						});
+							console.log(JSON.stringify(result));
+						});*/
 					}
 					fileReader.readAsDataURL(file);
 				}
